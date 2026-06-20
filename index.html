@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Insolvency Map — NZ Company Liquidation Tracker</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --ink:#11161c; --slate:#1b232c; --panel:#222c37; --line:#394754;
+    --muted:#8a98a6; --soft:#aebac6; --accent:#e8633a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:'Hanken Grotesk',sans-serif;background:var(--ink);color:#e8edf2;
+    overflow:hidden;-webkit-font-smoothing:antialiased}
+  #app{display:grid;grid-template-columns:330px 1fr;height:100vh}
+
+  aside{background:var(--slate);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;overflow:hidden;z-index:1000}
+  .brand{padding:20px 22px 16px;border-bottom:1px solid var(--line)}
+  .brand h1{font-size:19px;font-weight:800;letter-spacing:-.02em;line-height:1;
+    display:flex;align-items:center;gap:9px}
+  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 0 4px rgba(232,99,58,.18)}
+  .brand p{font-size:11.5px;color:var(--muted);margin-top:7px;letter-spacing:.04em;
+    text-transform:uppercase;font-weight:600}
+
+  .panel{padding:18px 22px;overflow-y:auto;flex:1}
+  .panel::-webkit-scrollbar{width:8px}
+  .panel::-webkit-scrollbar-thumb{background:#33414e;border-radius:8px}
+  .stat{display:flex;align-items:baseline;gap:9px;margin-bottom:20px}
+  .stat .n{font-family:'JetBrains Mono',monospace;font-size:34px;font-weight:700;
+    color:#fff;letter-spacing:-.02em}
+  .stat .l{font-size:12px;color:var(--muted);text-transform:uppercase;
+    letter-spacing:.08em;font-weight:600}
+  .group{margin-bottom:22px}
+  .group h2{font-size:11px;text-transform:uppercase;letter-spacing:.12em;
+    color:var(--soft);font-weight:700;margin-bottom:11px}
+  label.chk{display:flex;align-items:center;gap:10px;padding:7px 0;cursor:pointer;
+    font-size:13.5px;color:#cdd6df;user-select:none;transition:color .15s}
+  label.chk:hover{color:#fff}
+  label.chk input{display:none}
+  .box{width:17px;height:17px;border-radius:5px;border:1.5px solid #4a5763;
+    display:grid;place-items:center;flex:none;transition:all .15s}
+  .box svg{width:11px;height:11px;opacity:0;transition:opacity .15s}
+  label.chk input:checked + .box svg{opacity:1}
+  .swatch{width:9px;height:9px;border-radius:50%;flex:none;margin-left:auto}
+  .daterow{display:flex;gap:9px}
+  .daterow .f{flex:1}
+  .daterow label{font-size:10.5px;color:var(--muted);text-transform:uppercase;
+    letter-spacing:.08em;font-weight:600;display:block;margin-bottom:5px}
+  input[type=date]{width:100%;background:var(--panel);border:1px solid var(--line);
+    color:#dfe6ec;border-radius:8px;padding:8px 9px;font-size:12px;
+    font-family:'JetBrains Mono',monospace;color-scheme:dark}
+  input[type=date]:focus{outline:none;border-color:var(--accent)}
+  .reset{width:100%;margin-top:4px;background:transparent;border:1px solid var(--line);
+    color:var(--soft);padding:10px;border-radius:9px;font-size:12.5px;font-weight:600;
+    cursor:pointer;letter-spacing:.03em;transition:all .15s;font-family:inherit}
+  .reset:hover{border-color:var(--accent);color:#fff}
+  .foot{padding:13px 22px;border-top:1px solid var(--line);font-size:11px;
+    color:var(--muted);line-height:1.6}
+  .foot b{color:var(--soft)}
+
+  main{position:relative}
+  #map{position:absolute;inset:0;background:#dfe6e9}
+  .topbar{position:absolute;top:16px;left:16px;right:16px;z-index:600;
+    display:flex;gap:12px;pointer-events:none}
+  .search{pointer-events:auto;background:#fff;border-radius:12px;display:flex;
+    align-items:center;padding:0 14px;height:46px;box-shadow:0 6px 24px rgba(10,20,30,.18);
+    flex:1;max-width:440px;border:1px solid rgba(0,0,0,.05)}
+  .search svg{width:18px;height:18px;color:#7a8893;flex:none}
+  .search input{border:0;outline:0;font-size:14.5px;font-weight:600;color:#1b232c;
+    padding:0 10px;flex:1;font-family:inherit;background:transparent;letter-spacing:.01em}
+  .search input::placeholder{color:#9aa6b0;font-weight:500}
+  .search .kind{font-size:11px;font-weight:700;color:#7a8893;text-transform:uppercase;
+    letter-spacing:.06em;border-left:1px solid #e3e7ea;padding-left:11px;white-space:nowrap}
+  .basetoggle{pointer-events:auto;display:flex;background:#fff;border-radius:12px;
+    overflow:hidden;box-shadow:0 6px 24px rgba(10,20,30,.18);height:46px;
+    border:1px solid rgba(0,0,0,.05)}
+  .basetoggle button{border:0;background:transparent;font-size:12.5px;font-weight:700;
+    padding:0 16px;cursor:pointer;color:#7a8893;font-family:inherit;letter-spacing:.02em}
+  .basetoggle button.on{background:var(--ink);color:#fff}
+
+  .legend{position:absolute;bottom:24px;right:16px;z-index:600;background:#fff;
+    border-radius:13px;padding:14px 16px;box-shadow:0 6px 24px rgba(10,20,30,.2);
+    border:1px solid rgba(0,0,0,.05);min-width:170px}
+  .legend h3{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;
+    color:#9aa6b0;font-weight:700;margin-bottom:10px}
+  .legend .row{display:flex;align-items:center;gap:9px;font-size:12.5px;
+    color:#2b3743;font-weight:600;padding:3px 0}
+  .legend .row span{width:11px;height:11px;border-radius:50%;flex:none}
+
+  /* status overlay (loading / empty / error) */
+  .status{position:absolute;inset:0;z-index:700;display:none;place-items:center;
+    background:rgba(17,22,28,.55);backdrop-filter:blur(2px)}
+  .status.show{display:grid}
+  .status .card{background:#fff;color:#1b232c;border-radius:16px;padding:26px 30px;
+    max-width:380px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+  .status .card h3{font-size:17px;font-weight:800;margin-bottom:8px}
+  .status .card p{font-size:13px;color:#5a6a78;line-height:1.6}
+  .status .card code{font-family:'JetBrains Mono',monospace;font-size:12px;
+    background:#f1efe9;padding:2px 6px;border-radius:5px;color:#c0492e}
+  .spin{width:30px;height:30px;border:3px solid #eee;border-top-color:var(--accent);
+    border-radius:50%;margin:0 auto 14px;animation:sp 1s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .pin{width:26px;height:26px;position:relative}
+  .pin .body{width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+    border:2.5px solid #fff;box-shadow:0 2px 5px rgba(0,0,0,.35);position:absolute;left:1px;top:0}
+  .pin .core{width:7px;height:7px;background:#fff;border-radius:50%;position:absolute;left:9.5px;top:8px}
+  .cluster{background:rgba(232,99,58,.9);color:#fff;border:3px solid rgba(255,255,255,.85);
+    border-radius:50%;display:grid;place-items:center;font-weight:800;
+    font-family:'JetBrains Mono',monospace;box-shadow:0 3px 10px rgba(0,0,0,.3)}
+
+  .leaflet-popup-content-wrapper{border-radius:14px;padding:0;overflow:hidden;
+    box-shadow:0 12px 40px rgba(10,20,30,.3)}
+  .leaflet-popup-content{margin:0;width:288px!important;font-family:'Hanken Grotesk',sans-serif}
+  .leaflet-popup-tip{box-shadow:0 12px 40px rgba(10,20,30,.3)}
+  .card2 .hd{padding:15px 17px 13px;color:#fff}
+  .card2 .hd .tag{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;
+    letter-spacing:.07em;background:rgba(255,255,255,.22);padding:3px 8px;border-radius:6px;margin-bottom:9px}
+  .card2 .hd h4{font-size:16px;font-weight:800;line-height:1.2;letter-spacing:-.01em}
+  .card2 .hd .addr{font-size:12px;opacity:.92;margin-top:5px;line-height:1.4}
+  .card2 .bd{padding:14px 17px;background:#fff;color:#1b232c}
+  .card2 .kv{display:flex;justify-content:space-between;gap:12px;padding:5px 0;
+    font-size:12.5px;border-bottom:1px solid #f0f0f0}
+  .card2 .kv:last-of-type{border-bottom:0}
+  .card2 .kv .k{color:#8a98a6;font-weight:600}
+  .card2 .kv .v{font-weight:700;text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px}
+  .card2 .sec{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:#9aa6b0;
+    font-weight:700;margin:13px 0 7px}
+  .card2 .notice{display:flex;align-items:center;justify-content:space-between;background:#f6f4ef;
+    border-radius:9px;padding:9px 11px;font-size:12.5px;font-weight:700;color:#2b3743}
+  .card2 .notice a{font-size:10.5px;font-weight:800;color:var(--accent);text-decoration:none;
+    border:1px solid rgba(232,99,58,.35);padding:3px 8px;border-radius:6px}
+  .card2 .dir{font-size:12.5px;color:#2b3743;font-weight:600;padding:3px 0}
+
+  @media(max-width:760px){
+    #app{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+    aside{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}
+    .panel{display:none}
+    .brand{border-bottom:0;white-space:nowrap}
+    .topbar{flex-direction:column}
+    .search{max-width:none}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <div class="brand">
+      <h1><span class="dot"></span>Insolvency Map</h1>
+      <p>NZ Company Liquidation Tracker</p>
+    </div>
+    <div class="panel">
+      <div class="stat"><span class="n" id="count">0</span><span class="l">results</span></div>
+      <div class="group"><h2>Notice Type</h2><div id="types"></div></div>
+      <div class="group"><h2>Date Range</h2>
+        <div class="daterow">
+          <div class="f"><label>From</label><input type="date" id="from"></div>
+          <div class="f"><label>To</label><input type="date" id="to"></div>
+        </div>
+      </div>
+      <button class="reset" id="reset">Reset filters</button>
+    </div>
+    <div class="foot">Data source: <b>data.json</b>. Replace that file to update the map.</div>
+  </aside>
+
+  <main>
+    <div id="map"></div>
+    <div class="topbar">
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="q" type="text" placeholder="Search company…" autocomplete="off">
+        <span class="kind">Company</span>
+      </div>
+      <div class="basetoggle">
+        <button id="bMap" class="on">Map</button>
+        <button id="bSat">Satellite</button>
+      </div>
+    </div>
+    <div class="legend"><h3>Legend</h3><div id="legend"></div></div>
+    <div class="status" id="status"><div class="card" id="statusCard"></div></div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+<script>
+/* ---- notice types & colors (legend uses the first three) ---- */
+const TYPES=[
+  {id:'Liquidation',color:'#e8633a'},
+  {id:'Receivership',color:'#1f6f8b'},
+  {id:'Winding up Application',color:'#d9a441'},
+  {id:'Liquidator Appointed',color:'#c0492e'},
+  {id:'Receiver Appointed',color:'#3d5a80'},
+  {id:'Removed',color:'#8b7cb0'},
+];
+const COLOR=Object.fromEntries(TYPES.map(t=>[t.id,t.color]));
+const DEFAULT_COLOR='#6b7785';
+
+/* ---- map ---- */
+const map=L.map('map',{zoomControl:false}).setView([-40.3,174.9],6);
+L.control.zoom({position:'bottomleft'}).addTo(map);
+const light=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  {attribution:'© OpenStreetMap © CARTO',subdomains:'abcd',maxZoom:19}).addTo(map);
+const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  {attribution:'© Esri',maxZoom:19});
+const cluster=L.markerClusterGroup({maxClusterRadius:48,
+  iconCreateFunction:c=>{const n=c.getChildCount();const s=n<10?34:n<50?42:50;
+    return L.divIcon({html:`<div class="cluster" style="width:${s}px;height:${s}px;font-size:${n<10?13:14}px">${n}</div>`,
+      className:'',iconSize:[s,s]});}});
+map.addLayer(cluster);
+
+function pinIcon(color){return L.divIcon({className:'',iconSize:[26,32],iconAnchor:[13,28],
+  html:`<div class="pin"><div class="body" style="background:${color}"></div><div class="core"></div></div>`});}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function popupHtml(r){
+  const c=COLOR[r.type]||DEFAULT_COLOR;
+  const ds=r.date?r.date.toLocaleDateString('en-NZ',{day:'2-digit',month:'short',year:'numeric'}):'—';
+  const dirs=(r.directors||[]);
+  const pdf=r.pdf?`<a href="${esc(r.pdf)}" target="_blank" rel="noopener">PDF</a>`:'';
+  return `<div class="card2">
+    <div class="hd" style="background:${c}">
+      <span class="tag">${esc(r.type||'Notice')}</span>
+      <h4>${esc(r.company)}</h4>
+      ${r.address?`<div class="addr">${esc(r.address)}</div>`:''}
+    </div>
+    <div class="bd">
+      <div class="kv"><span class="k">Notice Date</span><span class="v">${ds}</span></div>
+      ${r.nzbn?`<div class="kv"><span class="k">NZBN</span><span class="v">${esc(r.nzbn)}</span></div>`:''}
+      ${dirs.length?`<div class="sec">Directors (${dirs.length})</div>${dirs.map(d=>`<div class="dir">• ${esc(d)}</div>`).join('')}`:''}
+      <div class="sec">Insolvency Notices (1)</div>
+      <div class="notice"><span>${esc(r.type||'Notice')}</span>${pdf}</div>
+    </div></div>`;
+}
+
+/* ---- state ---- */
+let DATA=[];
+const active=new Set(TYPES.map(t=>t.id)); active.add('__other__');
+const $q=document.getElementById('q'),$from=document.getElementById('from'),
+      $to=document.getElementById('to'),$count=document.getElementById('count');
+
+function typeKey(r){return COLOR[r.type]?r.type:'__other__';}
+
+function render(){
+  const q=$q.value.trim().toLowerCase();
+  const f=$from.value?new Date($from.value):null;
+  const t=$to.value?new Date($to.value+'T23:59:59'):null;
+  cluster.clearLayers();
+  let shown=0;
+  DATA.forEach(r=>{
+    if(!active.has(typeKey(r)))return;
+    if(q && !(r.company||'').toLowerCase().includes(q))return;
+    if(f && r.date && r.date<f)return;
+    if(t && r.date && r.date>t)return;
+    cluster.addLayer(r.marker); shown++;
+  });
+  $count.textContent=shown.toLocaleString();
+}
+
+/* ---- filters + legend UI ---- */
+const tick=`<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`;
+const $types=document.getElementById('types'),$legend=document.getElementById('legend');
+TYPES.forEach(t=>{
+  const l=document.createElement('label');l.className='chk';
+  l.innerHTML=`<input type="checkbox" checked><span class="box" style="background:${t.color}">${tick}</span>
+    <span>${t.id}</span><span class="swatch" style="background:${t.color}"></span>`;
+  l.querySelector('input').addEventListener('change',e=>{
+    e.target.checked?active.add(t.id):active.delete(t.id);
+    l.querySelector('.box').style.background=e.target.checked?t.color:'transparent';render();});
+  $types.appendChild(l);
+  if(['Liquidation','Receivership','Removed'].includes(t.id)){
+    const r=document.createElement('div');r.className='row';
+    r.innerHTML=`<span style="background:${t.color}"></span>${t.id}`;$legend.appendChild(r);}
+});
+$q.addEventListener('input',render);
+$from.addEventListener('change',render);
+$to.addEventListener('change',render);
+document.getElementById('reset').addEventListener('click',()=>{
+  $q.value='';$from.value='';$to.value='';
+  active.clear();TYPES.forEach(t=>active.add(t.id));active.add('__other__');
+  document.querySelectorAll('#types input').forEach((c,i)=>{c.checked=true;c.nextElementSibling.style.background=TYPES[i].color;});
+  render();});
+
+const bMap=document.getElementById('bMap'),bSat=document.getElementById('bSat');
+bMap.onclick=()=>{map.removeLayer(sat);light.addTo(map);bMap.classList.add('on');bSat.classList.remove('on');};
+bSat.onclick=()=>{map.removeLayer(light);sat.addTo(map);bSat.classList.add('on');bMap.classList.remove('on');};
+
+/* ---- status overlay ---- */
+const $status=document.getElementById('status'),$sc=document.getElementById('statusCard');
+function showStatus(html){$sc.innerHTML=html;$status.classList.add('show');}
+function hideStatus(){$status.classList.remove('show');}
+
+/* ---- load data.json ---- */
+async function load(){
+  showStatus('<div class="spin"></div><h3>Loading data…</h3><p>Reading <code>data.json</code></p>');
+  try{
+    const res=await fetch('data.json',{cache:'no-store'});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    let rows=await res.json();
+    if(!Array.isArray(rows))rows=rows.records||rows.data||[];
+    DATA=rows.filter(r=>typeof r.lat==='number'&&typeof r.lng==='number').map(r=>{
+      const rec={...r,date:r.date?new Date(r.date):null};
+      rec.marker=L.marker([rec.lat,rec.lng],{icon:pinIcon(COLOR[rec.type]||DEFAULT_COLOR)})
+        .bindPopup(popupHtml(rec),{maxWidth:300});
+      return rec;
+    });
+    render();
+    if(DATA.length){
+      map.fitBounds(L.latLngBounds(DATA.map(r=>[r.lat,r.lng])).pad(0.15));
+      hideStatus();
+    }else{
+      showStatus('<h3>No records yet</h3><p><code>data.json</code> は空でした。レコードを追加して再アップロードすると地図に反映されます。</p>');
+    }
+  }catch(err){
+    showStatus(`<h3>Could not load data.json</h3>
+      <p>原因の多くは次のどちらかです：<br>
+      ① <code>data.json</code> がまだ無い／場所が違う（index.html と同じ階層に置く）<br>
+      ② ローカルの <code>file://</code> で開いている（ブラウザがJSON読み込みをブロック）。<br>
+      GitHub Pages 等の <b>http(s) で配信</b>すれば動きます。<br><br>
+      <span style="color:#9aa6b0;font-size:11px">${esc(err.message)}</span></p>`);
+  }
+}
+load();
+</script>
+</body>
+</html>
