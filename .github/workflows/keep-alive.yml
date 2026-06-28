@@ -1,1 +1,29 @@
+name: Supabase Keep Alive
 
+# Supabase の無料プロジェクトが「無アクティビティ」で一時停止されるのを防ぐため、
+# 定期的に REST API へリクエストを送って稼働状態を維持します。
+
+on:
+  schedule:
+    # 2日に1回、UTC 0:00（日本時間 午前9時）に実行
+    - cron: "0 0 */2 * *"
+  workflow_dispatch:  # GitHub の画面から手動実行も可能
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          echo "Pinging Supabase..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+          echo "HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
+            echo "Supabase is awake."
+          else
+            echo "Unexpected response."
+            exit 1
+          fi
